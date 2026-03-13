@@ -1,0 +1,28 @@
+{
+  "name": "drawio-aws-parser",
+  "version": "0.1.0",
+  "description": "Parser de diagramas draw.io/diagrams.net para extraer VPC, subnets, servicios AWS y conexiones.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "drawio-terraform-parser": "bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
+  },
+  "keywords": ["drawio", "aws", "parser", "vpc", "subnet", "diagrams.net"],
+  "license": "MIT",
+  "dependencies": {
+    "fast-xml-parser": "^4.4.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "fast-check": "^3.15.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
