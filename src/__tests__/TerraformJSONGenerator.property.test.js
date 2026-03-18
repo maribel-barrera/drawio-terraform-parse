@@ -837,7 +837,7 @@ describe('TerraformJSONGenerator Property Tests', () => {
     // Pretty print debe generar metadatos correctos
     const prettyPrint = generator.prettyPrintJSON(serialized);
     expect(prettyPrint.metadata.structure.subnetCount).toBe(20);
-    expect(prettyPrint.metadata.structure.routeTableCount).toBe(5);
+    expect(prettyPrint.metadata.structure.routeTableCount).toBe(11);
   });
 
   /**

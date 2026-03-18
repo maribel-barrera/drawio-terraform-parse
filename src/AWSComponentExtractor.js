@@ -80,7 +80,7 @@ export class AWSComponentExtractor {
 
     const projectInfo = {
       project_name: 'aws-project',
-      area: 'development', 
+      area: 'elektra',
       ecosistema: 'cloud',
       environment: 'dev',
       diagram_title: null,
@@ -90,37 +90,39 @@ export class AWSComponentExtractor {
     };
 
     try {
-      // Buscar tabla de información del proyecto
-      const infoTable = this._findProjectInfoTable(elements);
-      
-      if (infoTable) {
-        const extractedInfo = this._parseProjectInfoTable(infoTable);
-        
-        // Actualizar información del proyecto con datos extraídos
-        if (extractedInfo.project_name) {
-          projectInfo.project_name = this._cleanProjectName(extractedInfo.project_name);
-        }
-        
-        if (extractedInfo.environment) {
-          projectInfo.environment = this._normalizeEnvironment(extractedInfo.environment);
-          projectInfo.area = this._mapEnvironmentToArea(projectInfo.environment);
-        }
-        
-        if (extractedInfo.ecosistema) {
-          projectInfo.ecosistema = this._cleanEcosistema(extractedInfo.ecosistema);
-        }
-        
-        // Información adicional
-        projectInfo.diagram_title = extractedInfo.diagram_title;
-        projectInfo.diagram_version = extractedInfo.diagram_version;
-        projectInfo.creation_date = extractedInfo.creation_date;
-        projectInfo.source = 'diagram_table';
+      // Primero: intentar parsear el alias de cuenta AWS (fuente más confiable)
+      // Formato: "Alias Account mx-{prefix}-{area}-{ecosistema}-{project_name}-{environment}"
+      const aliasInfo = this._extractFromAccountAlias(elements);
+      if (aliasInfo.found) {
+        Object.assign(projectInfo, aliasInfo.data);
+        projectInfo.source = 'account_alias';
       } else {
-        // Intentar extraer información de elementos individuales
-        const fallbackInfo = this._extractProjectInfoFromElements(elements);
-        if (fallbackInfo.found) {
-          Object.assign(projectInfo, fallbackInfo.data);
-          projectInfo.source = 'elements_fallback';
+        // Buscar tabla de información del proyecto
+        const infoTable = this._findProjectInfoTable(elements);
+        
+        if (infoTable) {
+          const extractedInfo = this._parseProjectInfoTable(infoTable);
+          
+          if (extractedInfo.project_name) {
+            projectInfo.project_name = this._cleanProjectName(extractedInfo.project_name);
+          }
+          if (extractedInfo.environment) {
+            projectInfo.environment = this._normalizeEnvironment(extractedInfo.environment);
+            projectInfo.area = this._mapEnvironmentToArea(projectInfo.environment);
+          }
+          if (extractedInfo.ecosistema) {
+            projectInfo.ecosistema = this._cleanEcosistema(extractedInfo.ecosistema);
+          }
+          projectInfo.diagram_title = extractedInfo.diagram_title;
+          projectInfo.diagram_version = extractedInfo.diagram_version;
+          projectInfo.creation_date = extractedInfo.creation_date;
+          projectInfo.source = 'diagram_table';
+        } else {
+          const fallbackInfo = this._extractProjectInfoFromElements(elements);
+          if (fallbackInfo.found) {
+            Object.assign(projectInfo, fallbackInfo.data);
+            projectInfo.source = 'elements_fallback';
+          }
         }
       }
       
@@ -621,6 +623,36 @@ export class AWSComponentExtractor {
    * Extrae información del proyecto de elementos individuales como fallback
    * @private
    */
+  _extractFromAccountAlias(elements) {
+    const info = { found: false, data: {} };
+
+    for (const element of elements) {
+      const rawText = this._cleanLabel(element.label || element.value || '');
+      // Formato: "Alias Account mx-EKT-CONCESIONARIOS-EKTMOTOS-PAPERLESS-DEV..."
+      const aliasMatch = rawText.match(/Alias\s+Account\s+(mx(?:-[A-Z0-9]+)+)/i);
+      if (aliasMatch) {
+        const alias = aliasMatch[1].toUpperCase();
+        const parts = alias.split('-').filter(Boolean);
+        // [MX, EKT, CONCESIONARIOS, EKTMOTOS, PAPERLESS, DEV]
+        if (parts.length >= 5) {
+          const env        = parts[parts.length - 1];
+          const project    = parts[parts.length - 2];
+          const ecosistema = parts[parts.length - 3];
+          const area       = parts.slice(2, parts.length - 3).join('-') || parts[2];
+
+          info.data.project_name = project.toLowerCase();
+          info.data.ecosistema   = ecosistema.toLowerCase();
+          info.data.area         = area.toLowerCase();
+          info.data.environment  = this._normalizeEnvironment(env);
+          info.found = true;
+          break;
+        }
+      }
+    }
+
+    return info;
+  }
+
   _extractProjectInfoFromElements(elements) {
     const info = {
       found: false,
@@ -630,6 +662,30 @@ export class AWSComponentExtractor {
     // Buscar elementos con información del proyecto
     for (const element of elements) {
       const text = (element.label || element.value || '').toLowerCase();
+      const rawText = this._cleanLabel(element.label || element.value || '');
+
+      // Parsear alias de cuenta AWS: mx-{area}-{ecosistema}-{project_name}-{environment}
+      // Ejemplo: Alias Account mx-EKT-CONCESIONARIOS-EKTMOTOS-PAPERLESS-DEV
+      const aliasMatch = rawText.match(/Alias\s+Account\s+(mx-[A-Z0-9]+(?:-[A-Z0-9]+)+)/i);
+      if (aliasMatch && !info.data.project_name) {
+        const alias = aliasMatch[1].toUpperCase();
+        // Formato: mx-{prefix}-{area}-{ecosistema}-{project_name}-{environment}
+        const parts = alias.split('-').filter(Boolean);
+        // partes: [MX, EKT, CONCESIONARIOS, EKTMOTOS, PAPERLESS, DEV]
+        if (parts.length >= 5) {
+          const env        = parts[parts.length - 1];
+          const project    = parts[parts.length - 2];
+          const ecosistema = parts[parts.length - 3];
+          const area       = parts.slice(2, parts.length - 3).join('-') || parts[2];
+
+          info.data.project_name = project.toLowerCase();
+          info.data.ecosistema   = ecosistema.toLowerCase();
+          info.data.area         = area.toLowerCase();
+          info.data.environment  = this._normalizeEnvironment(env);
+          info.found = true;
+          continue;
+        }
+      }
       
       // Buscar nombre del proyecto
       if (text.includes('proyecto') && !info.data.project_name) {

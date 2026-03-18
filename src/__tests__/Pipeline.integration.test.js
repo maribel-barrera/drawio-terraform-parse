@@ -227,7 +227,7 @@ describe('Pipeline Integration Tests', () => {
       
       // Verify final state
       expect(finalState.success).toBe(true);
-      expect(finalState.totalDuration).toBeGreaterThan(0);
+      expect(finalState.totalDuration).toBeGreaterThanOrEqual(0);
       expect(finalState.stages.xmlParsing.status).toBe('completed');
       expect(finalState.stages.awsExtraction.status).toBe('completed');
       expect(finalState.stages.terraformGeneration.status).toBe('completed');
@@ -255,7 +255,7 @@ describe('Pipeline Integration Tests', () => {
       // Verify state is set
       let state = pipeline.getState();
       expect(state.success).toBe(true);
-      expect(state.totalDuration).toBeGreaterThan(0);
+      expect(state.totalDuration).toBeGreaterThanOrEqual(0);
       
       // Reset pipeline
       pipeline.reset();

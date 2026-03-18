@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Output files
+*.json
+!package.json
+!package-lock.json
+
+# Coverage
+coverage/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*

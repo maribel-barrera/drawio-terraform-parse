@@ -21,7 +21,7 @@ export class TerraformJSONGenerator {
     // Configuración por defecto según requerimientos
     this.defaultConfig = {
       project_name: 'aws-project',
-      area: 'development',
+      area: 'elektra',
       ecosistema: 'cloud',
       environment: 'dev',
       region: 'us-east-1',
@@ -57,15 +57,16 @@ export class TerraformJSONGenerator {
       const projectInfo = awsComponents.projectInfo || {};
       
       // Extraer información básica del VPC
-      const vpcInfo = this._extractVPCInfo(awsComponents);
+      const vpcInfo = this._extractVPCInfo(awsComponents, projectInfo);
       
       // Crear estructura de subnets
       const subnetStructure = this.createSubnetStructure(awsComponents.subnets || []);
       
-      // Crear estructura de route tables
+      // Crear estructura de route tables basada en subnets procesadas
       const routeTableStructure = this.createRouteTableStructure(
-        awsComponents.routeTables || [],
-        awsComponents.subnets || []
+        subnetStructure.subnets,
+        projectInfo.project_name || this.defaultConfig.project_name,
+        projectInfo.environment || this.defaultConfig.environment
       );
 
       // Extraer arrays de información adicional
@@ -143,10 +144,16 @@ export class TerraformJSONGenerator {
       }
     };
 
+    let acceptedIndex = 0;
     subnets.forEach((subnet, index) => {
       try {
-        const subnetConfig = this._createSubnetConfig(subnet, index);
-        const subnetName = this._generateSubnetName(subnet, index);
+        const subnetConfig = this._createSubnetConfig(subnet, acceptedIndex);
+
+        // Omitir subnets sin CIDR válido
+        if (!subnetConfig) return;
+
+        const subnetName = this._generateSubnetName(subnet, acceptedIndex);
+        acceptedIndex++;
         
         structure.subnets[subnetName] = subnetConfig;
         
@@ -173,58 +180,61 @@ export class TerraformJSONGenerator {
    * @param {Array} subnets - Array de subnets para mapeo
    * @returns {Object} - Estructura de route tables
    */
-  createRouteTableStructure(routeTables, subnets) {
-    if (!Array.isArray(routeTables)) {
-      routeTables = [];
-    }
-    if (!Array.isArray(subnets)) {
-      subnets = [];
-    }
+  createRouteTableStructure(subnets, projectName, environment) {
+    // subnets es el objeto { name: { cidr, az, tags } } ya procesado
+    const env = environment || this.defaultConfig.environment;
+    const project = projectName || this.defaultConfig.project_name;
 
-    const structure = {
-      routeTables: {},
-      mainRouteTable: null,
-      summary: {
-        total: routeTables.length,
-        main: 0,
-        custom: 0
-      }
+    // Mapeo de tipo de subnet a segmentos del nombre de RT
+    const typeMap = {
+      'private_rt':  { routable: 'routable',     visibility: 'private' },
+      'private_nrt': { routable: 'non-routable',  visibility: 'private' },
+      'public-rt':   { routable: 'routable',      visibility: 'public'  }
     };
 
-    // Procesar route tables existentes
-    routeTables.forEach((routeTable, index) => {
-      try {
-        const rtConfig = this._createRouteTableConfig(routeTable, subnets);
-        const rtName = this._generateRouteTableName(routeTable, index);
-        
-        structure.routeTables[rtName] = rtConfig;
-        
-        // Identificar route table principal
-        if (routeTable.isMainRouteTable || routeTable.type === 'main') {
-          structure.mainRouteTable = rtName;
-          structure.summary.main++;
-        } else {
-          structure.summary.custom++;
-        }
-      } catch (error) {
-        throw new TerraformGenerationError(
-          'ROUTE_TABLE_PROCESSING_ERROR',
-          `Error procesando route table ${routeTable.id || index}: ${error.message}`,
-          { routeTable, index, originalError: error }
-        );
+    // Agrupar nombres de subnets por tipo, en orden de inserción
+    const groups = {};
+    Object.entries(subnets).forEach(([name, config]) => {
+      const type = config.tags?.Type || 'private_rt';
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(name);
+    });
+
+    const routeTables = {};
+    let firstRtName = null;
+
+    // Crear una RT por cada dupla (par) de subnets del mismo tipo
+    Object.entries(groups).forEach(([type, names]) => {
+      const { routable, visibility } = typeMap[type] || { routable: 'routable', visibility: 'private' };
+
+      for (let i = 0; i < names.length; i += 2) {
+        const rtIndex = Math.floor(i / 2) + 1;
+        const rtName = `rt-${project}-${routable}-${visibility}-${rtIndex}`;
+        const pair = names.slice(i, i + 2);
+
+        routeTables[rtName] = {
+          routes: [],
+          associated_subnets: pair,
+          tags: {
+            Name: rtName,
+            Type: type,
+            Environment: env
+          }
+        };
+
+        if (!firstRtName) firstRtName = rtName;
       }
     });
 
-    // Si no hay route table principal definida, crear una por defecto
-    if (!structure.mainRouteTable && subnets.length > 0) {
-      const defaultMainRT = this._createDefaultMainRouteTable(subnets);
-      structure.routeTables['main-rt'] = defaultMainRT;
-      structure.mainRouteTable = 'main-rt';
-      structure.summary.main++;
-      structure.summary.total++;
-    }
-
-    return structure;
+    return {
+      routeTables,
+      mainRouteTable: firstRtName,
+      summary: {
+        total: Object.keys(routeTables).length,
+        main: firstRtName ? 1 : 0,
+        custom: Math.max(0, Object.keys(routeTables).length - 1)
+      }
+    };
   }
 
   /**
@@ -367,14 +377,8 @@ export class TerraformJSONGenerator {
       }
     }
 
-    // Validar que non_route_cidr esté dentro de vpc_cidr
-    if (!this._isCIDRWithinRange(configuration.non_route_cidr, configuration.vpc_cidr)) {
-      throw new TerraformGenerationError(
-        'CIDR_RANGE_MISMATCH',
-        `El CIDR no ruteable (${configuration.non_route_cidr}) debe estar dentro del rango del VPC (${configuration.vpc_cidr})`,
-        { vpc_cidr: configuration.vpc_cidr, non_route_cidr: configuration.non_route_cidr }
-      );
-    }
+    // non_route_cidr puede ser un rango diferente al vpc_cidr (ej: 100.64.0.0/16)
+    // por lo que no se valida que esté dentro del rango del VPC
   }
 
   /**
@@ -1038,24 +1042,24 @@ export class TerraformJSONGenerator {
    * Extrae información del VPC de los componentes AWS
    * @private
    */
-  _extractVPCInfo(awsComponents) {
+  _extractVPCInfo(awsComponents, projectInfo = {}) {
     const vpcs = awsComponents.vpcs || [];
+    const projectName = projectInfo.project_name || this.defaultConfig.project_name;
+    const environment = projectInfo.environment || this.defaultConfig.environment;
     
     if (vpcs.length === 0) {
-      // Usar valores por defecto si no hay VPC
       return {
-        vpc_name: 'default-vpc',
+        vpc_name: `vpc-${projectName}-${environment}`,
         vpc_cidr: '10.0.0.0/16',
-        non_route_cidr: '10.0.0.0/24'
+        non_route_cidr: '100.64.0.0/16'
       };
     }
 
-    // Usar el primer VPC encontrado
     const primaryVpc = vpcs[0];
     const vpcCidr = this._validateAndFixCIDR(primaryVpc.cidr) || '10.0.0.0/16';
     
     return {
-      vpc_name: this._cleanName(primaryVpc.name) || 'extracted-vpc',
+      vpc_name: `vpc-${projectName}-${environment}`,
       vpc_cidr: vpcCidr,
       non_route_cidr: this._calculateNonRouteCIDR(vpcCidr),
       region: primaryVpc.region || this.defaultConfig.region
@@ -1078,14 +1082,19 @@ export class TerraformJSONGenerator {
       az = availabilityZones[index % availabilityZones.length];
     }
     
-    const cidr = this._validateAndFixCIDR(subnet.cidr) || this._generateDefaultCIDR(index);
+    const cidr = this._validateAndFixCIDR(subnet.cidr);
+
+    // Si no hay CIDR válido, no se puede crear la subnet
+    if (!cidr) {
+      return null;
+    }
     
     // Estructura simplificada según la definición de Terraform
     return {
       cidr: cidr,
       az: az,  // Cambiar de 'availability_zone' a 'az'
       tags: {
-        Name: this._cleanName(subnet.name) || `subnet-${index + 1}`,
+        Name: this._generateSubnetName(subnet, index),
         Type: type,
         Environment: this.defaultConfig.environment
       }
@@ -1099,7 +1108,13 @@ export class TerraformJSONGenerator {
   _classifySubnetForTerraform(subnet) {
     const text = (subnet.label || subnet.value || '').toLowerCase();
     const subnetType = subnet.type || '';
-    
+
+    // Si el CIDR comienza con 100., clasificar como no ruteable
+    const cidr = subnet.cidr || '';
+    if (cidr.startsWith('100.')) {
+      return 'private_nrt';
+    }
+
     // Verificar patrones específicos
     if (this.subnetTypePatterns.private_non_routable.test(text) || 
         subnetType === 'private-non-routable') {
@@ -1120,12 +1135,16 @@ export class TerraformJSONGenerator {
    * @private
    */
   _generateSubnetName(subnet, index) {
-    if (subnet.name && subnet.name.trim()) {
-      return this._cleanName(subnet.name);
-    }
-    
     const type = this._classifySubnetForTerraform(subnet);
-    return `subnet-${type}-${index + 1}`;
+    const env = this.defaultConfig.environment || 'dev';
+
+    const typeLabel = {
+      'private_rt':  'privada-rt',
+      'private_nrt': 'privada-nrt',
+      'public-rt':   'publica-rt'
+    }[type] || type;
+
+    return `subnet-${typeLabel}${index + 1}-${env}`;
   }
 
   /**
@@ -1227,16 +1246,7 @@ export class TerraformJSONGenerator {
    * @private
    */
   _calculateNonRouteCIDR(vpcCidr) {
-    try {
-      const [ip, mask] = vpcCidr.split('/');
-      const maskNum = parseInt(mask, 10);
-      
-      // Incrementar máscara para subnet más pequeña
-      const newMask = Math.min(maskNum + 8, 30);
-      return `${ip}/${newMask}`;
-    } catch {
-      return '10.0.0.0/24'; // Fallback
-    }
+    return '100.64.0.0/16';
   }
 
   /**

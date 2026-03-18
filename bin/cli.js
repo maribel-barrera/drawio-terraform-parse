@@ -221,12 +221,16 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
       
       const awsComponents = this.awsExtractor.identifyAWSComponents(elements);
       
+      // Extraer información del proyecto desde el alias de cuenta AWS
+      const projectInfo = this.awsExtractor.extractProjectInfo(elements);
+      
       // Extraer información detallada de cada tipo de componente
       const vpcInfo = this.awsExtractor.extractVPCInfo(awsComponents.vpcs);
       const subnetInfo = this.awsExtractor.extractSubnetInfo(awsComponents.subnets);
       const routeTableInfo = this.awsExtractor.extractRouteTableInfo(elements);
       
       const processedComponents = {
+        projectInfo,
         vpcs: vpcInfo,
         subnets: subnetInfo,
         routeTables: routeTableInfo.routeTables,
@@ -555,7 +559,9 @@ async function main() {
 }
 
 // Ejecutar solo si es el módulo principal
-if (import.meta.url.startsWith('file:') && process.argv[1] && import.meta.url.includes(process.argv[1].replace(/\\/g, '/'))) {
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+if (process.argv[1] && __filename === resolve(process.argv[1])) {
   main().catch(error => {
     console.error('❌ Error fatal:', error.message);
     process.exit(1);
