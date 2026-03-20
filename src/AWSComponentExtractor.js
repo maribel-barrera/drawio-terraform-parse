@@ -80,9 +80,9 @@ export class AWSComponentExtractor {
 
     const projectInfo = {
       project_name: 'aws-project',
-      area: 'elektra',
-      ecosistema: 'cloud',
-      environment: 'dev',
+      area: 'UDN',
+      ecosistema: '0000',
+      environment: 'DEV',
       diagram_title: null,
       diagram_version: null,
       creation_date: null,

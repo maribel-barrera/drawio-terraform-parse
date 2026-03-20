@@ -9,9 +9,9 @@ Herramienta CLI para leer archivos de diagrama **draw.io** (`.drawio` o `.xml`),
 1. **Parsea** el archivo draw.io o su XML exportado, incluyendo soporte para contenido comprimido en base64.
 2. **Extrae** los componentes AWS identificados en el diagrama:
    - VPCs (nombre, CIDR, región)
-   - Subnets (públicas, privadas ruteables, privadas no ruteables, zonas de disponibilidad)
-   - Route Tables y sus asociaciones a subnets
-   - Servicios AWS (EC2, RDS, ECS, ALB, NAT, etc.)
+   - Subnets clasificadas por tipo: privadas ruteables (`private_rt`), privadas no ruteables (`private_nrt`) y públicas (`public-rt`), con zona de disponibilidad
+   - Route Tables agrupadas por pares de subnets del mismo tipo
+   - Servicios AWS (EC2, RDS, ECS, ALB, NAT, WAF, etc.) con categoría
    - Información del proyecto desde el alias de cuenta AWS o tabla de metadatos del diagrama
 3. **Genera** un JSON estructurado con todas las variables necesarias para aprovisionar la infraestructura con Terraform.
 
@@ -70,7 +70,6 @@ node bin/cli.js -i "diagram.drawio" -o output.json --verbose
 
 # Solo validar sin generar salida
 node bin/cli.js -i "diagram.drawio" --validate
-
 ```
 
 ---
@@ -89,34 +88,73 @@ El archivo de salida contiene las variables listas para un módulo Terraform de 
 
 ```json
 {
-  "project_name": "mi-proyecto",
-  "area": "ekt",
-  "ecosistema": "cloud",
+  "project_name": "paperless",
+  "area": "concesionarios",
+  "ecosistema": "ektmotos",
   "environment": "dev",
   "region": "us-east-1",
-  "vpc_name": "vpc-mi-proyecto-dev",
-  "vpc_cidr": "10.0.0.0/16",
-  "non_route_cidr": "100.64.0.0/16",
   "has_internet": true,
   "existing_vpc": null,
   "s3_enable_versioning": "Enabled",
+  "vpc_name": "vpc-paperless-dev",
+  "vpc_cidr": "10.102.67.0/24",
+  "non_route_cidr": "100.64.0.0/16",
+  "cidr_blocks": ["10.102.67.0/24", "100.64.0.0/16", "..."],
+  "availability_zones": ["us-east-1a", "us-east-1b"],
   "subnets": {
-    "sn-mi-proyecto-private-routable-1a": {
-      "cidr": "10.0.1.0/24",
+    "subnet-privada-rt1-dev": {
+      "cidr": "10.102.67.64/27",
       "az": "us-east-1a",
-      "tags": { "Name": "...", "Type": "private_rt", "Environment": "dev" }
+      "tags": { "Name": "subnet-privada-rt1-dev", "Type": "private_rt", "Environment": "dev" }
     }
   },
   "route_tables": {
-    "rt-mi-proyecto-routable-private-1": {
+    "rt-paperless-routable-private-1": {
       "routes": [],
-      "associated_subnets": ["sn-mi-proyecto-private-routable-1a"],
-      "tags": { "Name": "...", "Type": "private_rt", "Environment": "dev" }
+      "associated_subnets": ["subnet-privada-rt1-dev", "subnet-privada-rt2-dev"],
+      "tags": { "Name": "rt-paperless-routable-private-1", "Type": "private_rt", "Environment": "dev" }
     }
   },
-  "main_rt": "rt-mi-proyecto-routable-private-1"
+  "main_rt": "rt-paperless-routable-private-1",
+  "services": [
+    { "label": "ECS FargateBackEnd", "icon": "Amazon ECS", "category": "compute" }
+  ]
 }
 ```
+
+### Tipos de subnet soportados
+
+| Tipo           | Tag `Type`      | Descripción                          |
+|----------------|-----------------|--------------------------------------|
+| Privada ruteable | `private_rt`  | Subnet con acceso a internet vía NAT |
+| Privada no ruteable | `private_nrt` | Subnet aislada sin salida a internet |
+| Pública        | `public-rt`     | Subnet con acceso directo a internet |
+
+### Nomenclatura de Route Tables
+
+Las route tables se generan agrupando subnets del mismo tipo en pares:
+
+```
+rt-{proyecto}-{routable|non-routable}-{private|public}-{índice}
+```
+
+Ejemplos:
+- `rt-paperless-routable-private-1`
+- `rt-paperless-non-routable-private-1`
+- `rt-paperless-routable-public-1`
+
+### Categorías de servicios AWS
+
+Los servicios extraídos del diagrama se clasifican automáticamente en:
+
+| Categoría    | Ejemplos                                      |
+|--------------|-----------------------------------------------|
+| `compute`    | ECS, EC2, Auto Scaling, ECR                   |
+| `network`    | ALB, NAT Gateway, Route 53, Transit Gateway   |
+| `security`   | WAF, GuardDuty, Shield, Secrets Manager       |
+| `database`   | RDS, DynamoDB                                 |
+| `storage`    | S3                                            |
+| `monitoring` | CloudWatch, CloudTrail, Config, Inspector     |
 
 ---
 
@@ -128,16 +166,22 @@ La herramienta extrae automáticamente los metadatos del proyecto desde:
 2. **Tabla de información** — tabla en el diagrama con campos como `Proyecto`, `Ambiente`, `Version`, `Fecha`, `ID IEECO`
 3. **Valores por defecto** — si no se encuentra ninguna de las anteriores
 
+El campo `_info_source` en el JSON de salida indica cuál fuente se utilizó (`account_alias`, `info_table`, o `defaults`).
+
 ---
 
 ## Arquitectura interna
 
 ```
-XMLParser          → parsea y descomprime el archivo draw.io
-AWSComponentExtractor → identifica y clasifica los componentes AWS
-TerraformJSONGenerator → genera y valida la estructura JSON de salida
-Pipeline           → orquesta los tres pasos con manejo de errores y recuperación
+XMLParser              → parsea y descomprime el archivo draw.io
+AWSComponentExtractor  → identifica y clasifica los componentes AWS
+JSONGenerator          → genera y valida la estructura JSON de salida
+Pipeline               → orquesta los tres pasos con manejo de errores y recuperación
 ```
+
+### Manejo de errores
+
+Cada módulo lanza errores tipados (`DrawIOParserError`, `AWSExtractionError`, `TerraformGenerationError`) con contexto detallado y sugerencias de resolución.
 
 ---
 
@@ -147,7 +191,10 @@ Pipeline           → orquesta los tres pasos con manejo de errores y recuperac
 npm test
 ```
 
-Incluye tests unitarios, de integración y tests basados en propiedades (property-based testing con `fast-check`) para validar la correctitud del parser y el generador.
+Incluye:
+- Tests unitarios por módulo
+- Tests de integración del pipeline completo
+- Tests basados en propiedades (property-based testing con `fast-check`) para `XMLParser`, `AWSComponentExtractor` y `JSONGenerator`
 
 ---
 

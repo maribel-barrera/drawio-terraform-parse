@@ -1,4 +1,4 @@
-// src/TerraformJSONGenerator.js
+// src/JSONGenerator.js
 
 /**
  * Error personalizado para errores de generación de configuración Terraform
@@ -13,10 +13,10 @@ export class TerraformGenerationError extends Error {
 }
 
 /**
- * Clase TerraformJSONGenerator para generar configuraciones JSON de Terraform
+ * Clase JSONGenerator para generar configuraciones JSON de Terraform
  * basadas en componentes AWS extraídos de diagramas draw.io
  */
-export class TerraformJSONGenerator {
+export class JSONGenerator {
   constructor() {
     // Configuración por defecto según requerimientos
     this.defaultConfig = {
@@ -72,6 +72,9 @@ export class TerraformJSONGenerator {
       // Extraer arrays de información adicional
       const additionalInfo = this._extractAdditionalInfo(subnetStructure.subnets, vpcInfo);
 
+      // Extraer servicios AWS
+      const services = this._extractServices(awsComponents.services || []);
+
       // Construir configuración completa usando información del proyecto
       const configuration = {
         // Usar información extraída del diagrama o valores por defecto
@@ -87,7 +90,8 @@ export class TerraformJSONGenerator {
         ...additionalInfo,
         subnets: subnetStructure.subnets,
         route_tables: routeTableStructure.routeTables,
-        main_rt: routeTableStructure.mainRouteTable
+        main_rt: routeTableStructure.mainRouteTable,
+        services
       };
 
       // Agregar información adicional del diagrama si está disponible
@@ -99,9 +103,6 @@ export class TerraformJSONGenerator {
       }
       if (projectInfo.creation_date) {
         configuration._creation_date = projectInfo.creation_date;
-      }
-      if (projectInfo.source) {
-        configuration._info_source = projectInfo.source;
       }
 
       // Validar configuración antes de retornar
@@ -187,9 +188,9 @@ export class TerraformJSONGenerator {
 
     // Mapeo de tipo de subnet a segmentos del nombre de RT
     const typeMap = {
-      'private_rt':  { routable: 'routable',     visibility: 'private' },
-      'private_nrt': { routable: 'non-routable',  visibility: 'private' },
-      'public-rt':   { routable: 'routable',      visibility: 'public'  }
+      'private_rt':  { routable: 'Routable',     visibility: 'Private' },
+      'private_nrt': { routable: 'Non-Routable',  visibility: 'Private' },
+      'public-rt':   { routable: 'Routable',      visibility: 'Public'  }
     };
 
     // Agrupar nombres de subnets por tipo, en orden de inserción
@@ -209,7 +210,7 @@ export class TerraformJSONGenerator {
 
       for (let i = 0; i < names.length; i += 2) {
         const rtIndex = Math.floor(i / 2) + 1;
-        const rtName = `rt-${project}-${routable}-${visibility}-${rtIndex}`;
+        const rtName = `rt-${project}-${routable}-${visibility}-${rtIndex}`.toUpperCase();
         const pair = names.slice(i, i + 2);
 
         routeTables[rtName] = {
@@ -1039,6 +1040,135 @@ export class TerraformJSONGenerator {
   }
 
   /**
+   * Extrae y normaliza la lista de servicios AWS encontrados en el diagrama
+   * @param {Array} services - Array de elementos clasificados como servicios
+   * @returns {Array} - Array de objetos de servicio normalizados
+   * @private
+   */
+  _extractServices(services) {
+    // Mapa de palabras clave → { icon (nombre oficial AWS), category }
+    // Orden importa: los más específicos primero
+    const serviceTypeMap = [
+      // storage
+      { pattern: /\bs3\b/i,                        icon: 'Amazon S3',                          category: 'storage' },
+      { pattern: /\bebs\b/i,                        icon: 'Amazon EBS',                         category: 'storage' },
+      { pattern: /efs/i,                            icon: 'Amazon EFS',                         category: 'storage' },
+      { pattern: /glacier/i,                        icon: 'Amazon S3 Glacier',                  category: 'storage' },
+      { pattern: /backup/i,                         icon: 'AWS Backup',                         category: 'storage' },
+
+      // compute
+      { pattern: /ecs|fargate/i,                    icon: 'Amazon ECS',                         category: 'compute' },
+      { pattern: /\becr\b/i,                        icon: 'Amazon ECR',                         category: 'compute' },
+      { pattern: /lambda/i,                         icon: 'AWS Lambda',                         category: 'compute' },
+      { pattern: /\bec2\b/i,                        icon: 'Amazon EC2',                         category: 'compute' },
+      { pattern: /auto.?scaling/i,                  icon: 'AWS Auto Scaling',                   category: 'compute' },
+      { pattern: /elastic.?beanstalk/i,             icon: 'AWS Elastic Beanstalk',              category: 'compute' },
+      { pattern: /batch/i,                          icon: 'AWS Batch',                          category: 'compute' },
+
+      // network
+      { pattern: /nat.?gateway|natgateway/i,        icon: 'Amazon VPC NAT Gateway',             category: 'network' },
+      { pattern: /internet.?gateway|igw/i,          icon: 'Amazon VPC Internet Gateway',        category: 'network' },
+      { pattern: /\balb\b|load.?balancer/i,         icon: 'Elastic Load Balancing',             category: 'network' },
+      { pattern: /\bnlb\b/i,                        icon: 'Elastic Load Balancing',             category: 'network' },
+      { pattern: /endpoint/i,                       icon: 'Amazon VPC Endpoint',                category: 'network' },
+      { pattern: /transit.?gateway/i,               icon: 'AWS Transit Gateway',                category: 'network' },
+      { pattern: /route.?53/i,                      icon: 'Amazon Route 53',                    category: 'network' },
+      { pattern: /cloudfront/i,                     icon: 'Amazon CloudFront',                  category: 'network' },
+      { pattern: /api.?gateway/i,                   icon: 'Amazon API Gateway',                 category: 'network' },
+      { pattern: /direct.?connect/i,                icon: 'AWS Direct Connect',                 category: 'network' },
+      { pattern: /vpn/i,                            icon: 'AWS Site-to-Site VPN',               category: 'network' },
+
+      // monitoring
+      { pattern: /cloudwatch/i,                     icon: 'Amazon CloudWatch',                  category: 'monitoring' },
+      { pattern: /alarm/i,                          icon: 'Amazon CloudWatch Alarms',           category: 'monitoring' },
+      { pattern: /inspector/i,                      icon: 'Amazon Inspector',                   category: 'monitoring' },
+      { pattern: /aws.config|\bconfig\b/i,          icon: 'AWS Config',                         category: 'monitoring' },
+      { pattern: /organization/i,                   icon: 'AWS Organizations',                  category: 'monitoring' },
+      { pattern: /x.?ray/i,                         icon: 'AWS X-Ray',                          category: 'monitoring' },
+      { pattern: /trusted.?advisor/i,               icon: 'AWS Trusted Advisor',                category: 'monitoring' },
+
+      // security
+      { pattern: /waf/i,                            icon: 'AWS WAF',                            category: 'security' },
+      { pattern: /cloudtrail/i,                     icon: 'AWS CloudTrail',                     category: 'security' },
+      { pattern: /shield/i,                         icon: 'AWS Shield',                         category: 'security' },
+      { pattern: /guardduty/i,                      icon: 'Amazon GuardDuty',                   category: 'security' },
+      { pattern: /secrets.?manager/i,               icon: 'AWS Secrets Manager',                category: 'security' },
+      { pattern: /parameter.?store/i,               icon: 'AWS Systems Manager Parameter Store',category: 'security' },
+      { pattern: /kms/i,                            icon: 'AWS KMS',                            category: 'security' },
+      { pattern: /iam/i,                            icon: 'AWS IAM',                            category: 'security' },
+      { pattern: /certificate.?manager|acm/i,       icon: 'AWS Certificate Manager',            category: 'security' },
+      { pattern: /securutyhub/i,                    icon: 'AWS Securtity Hub',                  category: 'security' },
+      { pattern: /detective/i,                      icon: 'AWS Detective',                      category: 'security' },
+
+      // database
+      { pattern: /\brds\b/i,                        icon: 'Amazon RDS',                         category: 'database' },
+      { pattern: /dynamodb/i,                       icon: 'Amazon DynamoDB',                    category: 'database' },
+      { pattern: /elasticache/i,                    icon: 'Amazon ElastiCache',                 category: 'database' },
+      { pattern: /aurora/i,                         icon: 'Amazon Aurora',                      category: 'database' },
+      { pattern: /redshift/i,                       icon: 'Amazon Redshift',                    category: 'database' },
+
+      // integration
+      { pattern: /sqs/i,                            icon: 'Amazon SQS',                         category: 'integration' },
+      { pattern: /sns/i,                            icon: 'Amazon SNS',                         category: 'integration' },
+      { pattern: /eventbridge|event.?bus/i,         icon: 'Amazon EventBridge',                 category: 'integration' },
+      { pattern: /step.?function/i,                 icon: 'AWS Step Functions',                 category: 'integration' },
+    ];
+
+    // Patrones para ignorar elementos que no son servicios reales
+    const ignorePatterns = [
+      /alias.?account/i,
+      /virginia|oregon|ireland|tokyo|sydney|frankfurt|sao.?paulo/i,
+      /us-east|us-west|eu-west|ap-southeast|ap-northeast/i,
+      /https?|tls|ssl/i,
+    ];
+
+    const seen = new Set();
+    const result = [];
+
+    for (const svc of services) {
+      const label = (svc.label || svc.value || '').trim();
+      const style = svc.style || '';
+
+      // Ignorar elementos sin label útil
+      if (!label || label.length < 2) continue;
+
+      // Limpiar el label (quitar saltos de línea y entidades HTML)
+      const cleanLabel = label
+        .replace(/&#xa;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Ignorar elementos que no son servicios reales
+      if (ignorePatterns.some(p => p.test(cleanLabel))) continue;
+
+      // Determinar tipo canónico y categoría
+      let serviceIcon = 'Other';
+      let serviceCategory = 'other';
+      for (const { pattern, icon, category } of serviceTypeMap) {
+        if (pattern.test(cleanLabel) || pattern.test(style)) {
+          serviceIcon = icon;
+          serviceCategory = category;
+          break;
+        }
+      }
+
+      // Deduplicar por label limpio
+      if (seen.has(cleanLabel)) continue;
+      seen.add(cleanLabel);
+
+      result.push({
+        label: cleanLabel,
+        icon: serviceIcon,
+        category: serviceCategory
+      });
+    }
+
+    const excludedCategories = new Set(['other', 'security', 'monitoring']);
+    return result.filter(svc => !excludedCategories.has(svc.category));
+  }
+
+  /**
    * Extrae información del VPC de los componentes AWS
    * @private
    */
@@ -1139,12 +1269,12 @@ export class TerraformJSONGenerator {
     const env = this.defaultConfig.environment || 'dev';
 
     const typeLabel = {
-      'private_rt':  'privada-rt',
-      'private_nrt': 'privada-nrt',
-      'public-rt':   'publica-rt'
+      'private_rt':  'Privada-RT',
+      'private_nrt': 'Privada-NRT',
+      'public-rt':   'Publica-RT'
     }[type] || type;
 
-    return `subnet-${typeLabel}${index + 1}-${env}`;
+    return `subnet-${typeLabel}${index + 1}-${env}`.toUpperCase();
   }
 
   /**

@@ -2,7 +2,7 @@
 
 import { XMLParser, DrawIOParserError } from "../src/XMLParser.js";
 import { AWSComponentExtractor, AWSExtractionError } from "../src/AWSComponentExtractor.js";
-import { TerraformJSONGenerator, TerraformGenerationError } from "../src/TerraformJSONGenerator.js";
+import { JSONGenerator, TerraformGenerationError } from "../src/JSONGenerator.js";
 import { writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -14,7 +14,7 @@ class DrawIOTerraformCLI {
   constructor() {
     this.xmlParser = new XMLParser();
     this.awsExtractor = new AWSComponentExtractor();
-    this.terraformGenerator = new TerraformJSONGenerator();
+    this.terraformGenerator = new JSONGenerator();
     this.verbose = false;
     this.startTime = null;
   }

@@ -19,3 +19,7 @@ npm-debug.log*
 # Environment
 .env
 .env.*
+
+# Drawio Files
+.drawio
+.drawio.*

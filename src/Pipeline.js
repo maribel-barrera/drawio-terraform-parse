@@ -2,7 +2,7 @@
 
 import { XMLParser, DrawIOParserError } from "./XMLParser.js";
 import { AWSComponentExtractor, AWSExtractionError } from "./AWSComponentExtractor.js";
-import { TerraformJSONGenerator, TerraformGenerationError } from "./TerraformJSONGenerator.js";
+import { JSONGenerator, TerraformGenerationError } from "./JSONGenerator.js";
 
 /**
  * Error personalizado para errores del pipeline
@@ -18,13 +18,13 @@ export class PipelineError extends Error {
 
 /**
  * Clase Pipeline que coordina el flujo completo de procesamiento
- * XMLParser → AWSComponentExtractor → TerraformJSONGenerator
+ * XMLParser → AWSComponentExtractor → JSONGenerator
  */
 export class DrawIOTerraformPipeline {
   constructor(options = {}) {
     this.xmlParser = new XMLParser();
     this.awsExtractor = new AWSComponentExtractor();
-    this.terraformGenerator = new TerraformJSONGenerator();
+    this.terraformGenerator = new JSONGenerator();
     
     // Configuración del pipeline
     this.config = {

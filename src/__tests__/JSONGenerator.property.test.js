@@ -1,12 +1,12 @@
-// src/__tests__/TerraformJSONGenerator.property.test.js
+// src/__tests__/JSONGenerator.property.test.js
 import fc from 'fast-check';
-import { TerraformJSONGenerator } from '../TerraformJSONGenerator.js';
+import { JSONGenerator } from '../JSONGenerator.js';
 
-describe('TerraformJSONGenerator Property Tests', () => {
+describe('JSONGenerator Property Tests', () => {
   let generator;
 
   beforeEach(() => {
-    generator = new TerraformJSONGenerator();
+    generator = new JSONGenerator();
   });
 
   /**

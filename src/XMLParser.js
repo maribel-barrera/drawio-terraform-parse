@@ -137,6 +137,9 @@ export class XMLParser {
         );
       }
 
+      // Filtrar elementos con locked=1 antes de procesar
+      this._filterLockedElements(mxGraphModel);
+
       // Limpiar valores HTML/XML en todos los elementos
       this._cleanValueAttributes(mxGraphModel);
       
@@ -461,6 +464,66 @@ export class XMLParser {
     return str.replace(/&[a-zA-Z0-9#]+;/g, (entity) => {
       return entities[entity] || entity;
     });
+  }
+
+  /**
+   * Filtra recursivamente los elementos mxCell que tengan locked=1 en su style o atributo directo
+   * @param {Object} obj - Objeto mxGraphModel o subárbol a procesar
+   * @private
+   */
+  _filterLockedElements(obj) {
+    if (!obj || typeof obj !== 'object') return;
+
+    if (Array.isArray(obj)) {
+      for (let i = obj.length - 1; i >= 0; i--) {
+        if (this._isLockedElement(obj[i])) {
+          obj.splice(i, 1);
+        } else {
+          this._filterLockedElements(obj[i]);
+        }
+      }
+      return;
+    }
+
+    for (const key of Object.keys(obj)) {
+      const value = obj[key];
+      if (Array.isArray(value)) {
+        for (let i = value.length - 1; i >= 0; i--) {
+          if (this._isLockedElement(value[i])) {
+            value.splice(i, 1);
+          } else {
+            this._filterLockedElements(value[i]);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        if (this._isLockedElement(value)) {
+          delete obj[key];
+        } else {
+          this._filterLockedElements(value);
+        }
+      }
+    }
+  }
+
+  /**
+   * Determina si un elemento tiene locked=1 en su atributo style o como atributo directo
+   * @param {Object} element - Elemento a evaluar
+   * @returns {boolean}
+   * @private
+   */
+  _isLockedElement(element) {
+    if (!element || typeof element !== 'object') return false;
+
+    // Atributo directo: locked="1" o locked=1
+    if (element.locked === '1' || element.locked === 1) return true;
+
+    // Dentro del style: "...locked=1;..."
+    const style = element.style;
+    if (typeof style === 'string' && /(?:^|;)\s*locked\s*=\s*1\s*(?:;|$)/.test(style)) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
