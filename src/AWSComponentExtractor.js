@@ -1814,7 +1814,7 @@ export class AWSComponentExtractor {
     
     // Recomendaciones basadas en issues críticos
     if (criticalIssues.length > 0) {
-      report.recommendations.push('Resolver issues críticos antes de proceder con la generación de Terraform');
+      report.recommendations.push('Resolver issues críticos antes de proceder con la generación de JSON');
       
       const missingCidrCount = criticalIssues.filter(issue => issue.type === 'HAS_CIDR').length;
       if (missingCidrCount > 0) {

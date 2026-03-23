@@ -2,7 +2,7 @@
 
 import { XMLParser, DrawIOParserError } from "./XMLParser.js";
 import { AWSComponentExtractor, AWSExtractionError } from "./AWSComponentExtractor.js";
-import { JSONGenerator, TerraformGenerationError } from "./JSONGenerator.js";
+import { JSONGenerator, JSONGenerationError } from "./JSONGenerator.js";
 
 /**
  * Error personalizado para errores del pipeline
@@ -20,11 +20,11 @@ export class PipelineError extends Error {
  * Clase Pipeline que coordina el flujo completo de procesamiento
  * XMLParser → AWSComponentExtractor → JSONGenerator
  */
-export class DrawIOTerraformPipeline {
+export class DrawIOJSONPipeline {
   constructor(options = {}) {
     this.xmlParser = new XMLParser();
     this.awsExtractor = new AWSComponentExtractor();
-    this.terraformGenerator = new JSONGenerator();
+    this.jsonGenerator = new JSONGenerator();
     
     // Configuración del pipeline
     this.config = {
@@ -43,7 +43,7 @@ export class DrawIOTerraformPipeline {
       stages: {
         xmlParsing: { status: 'pending', duration: 0, data: null, errors: [] },
         awsExtraction: { status: 'pending', duration: 0, data: null, errors: [] },
-        terraformGeneration: { status: 'pending', duration: 0, data: null, errors: [] }
+        jsonGeneration: { status: 'pending', duration: 0, data: null, errors: [] }
       },
       totalDuration: 0,
       success: false
@@ -81,7 +81,7 @@ export class DrawIOTerraformPipeline {
    * @private
    */
   _getStageIndex(stage) {
-    const stages = ['xmlParsing', 'awsExtraction', 'terraformGeneration'];
+    const stages = ['xmlParsing', 'awsExtraction', 'jsonGeneration'];
     return stages.indexOf(stage);
   }
 
@@ -132,12 +132,12 @@ export class DrawIOTerraformPipeline {
       // Etapa 2: Extracción AWS
       const awsResult = await this._executeAWSExtraction(xmlResult.elements);
       
-      // Etapa 3: Generación Terraform
-      const terraformResult = await this._executeTerraformGeneration(awsResult.components);
+      // Etapa 3: Generación JSON
+      const jsonResult = await this._executeJSONGeneration(awsResult.components);
       
       // Escribir archivo de salida si se especifica
       if (outputFilePath) {
-        await this._writeOutputFile(outputFilePath, terraformResult.configuration);
+        await this._writeOutputFile(outputFilePath, jsonResult.configuration);
       }
       
       // Finalizar pipeline exitosamente
@@ -150,7 +150,7 @@ export class DrawIOTerraformPipeline {
         success: true,
         xmlResult,
         awsResult,
-        terraformResult,
+        jsonResult,
         outputFile: outputFilePath,
         stats: this._generateStats()
       };
@@ -332,33 +332,33 @@ export class DrawIOTerraformPipeline {
   }
 
   /**
-   * Ejecuta la etapa de generación de configuración Terraform
+   * Ejecuta la etapa de generación de configuración JSON
    * @private
    */
-  async _executeTerraformGeneration(components) {
-    this._startStage('terraformGeneration');
+  async _executeJSONGeneration(components) {
+    this._startStage('jsonGeneration');
     
     try {
-      this.reportProgress('terraformGeneration', 25, 'Generando configuración Terraform');
+      this.reportProgress('jsonGeneration', 25, 'Generando configuración JSON');
       
-      // Generar configuración Terraform
-      const configuration = this.terraformGenerator.generateConfiguration(components);
+      // Generar configuración JSON
+      const configuration = this.jsonGenerator.generateConfiguration(components);
       
-      this.reportProgress('terraformGeneration', 50, 'Validando estructura de salida');
+      this.reportProgress('jsonGeneration', 50, 'Validando estructura de salida');
       
       // Validar estructura de salida
-      this.terraformGenerator.validateOutputStructure(configuration);
+      this.jsonGenerator.validateOutputStructure(configuration);
       
-      this.reportProgress('terraformGeneration', 75, 'Serializando a JSON');
+      this.reportProgress('jsonGeneration', 75, 'Serializando a JSON');
       
       // Serializar a JSON
-      const jsonOutput = this.terraformGenerator.serializeToJSON(configuration, 2);
+      const jsonOutput = this.jsonGenerator.serializeToJSON(configuration, 2);
       
       // Validar round trip si está habilitado
       if (this.config.validateIntermediateSteps) {
-        this.reportProgress('terraformGeneration', 90, 'Validando round trip');
+        this.reportProgress('jsonGeneration', 90, 'Validando round trip');
         
-        const roundTripResult = this.terraformGenerator.validateRoundTrip(configuration);
+        const roundTripResult = this.jsonGenerator.validateRoundTrip(configuration);
         if (!roundTripResult.success) {
           this.log('Advertencia: Validación round trip falló', 'warn');
         }
@@ -375,20 +375,20 @@ export class DrawIOTerraformPipeline {
         }
       };
       
-      this._endStage('terraformGeneration', true, result);
+      this._endStage('jsonGeneration', true, result);
       
-      this.log(`Terraform generation completado: ${result.size} bytes generados`);
+      this.log(`JSON generation completado: ${result.size} bytes generados`);
       
       return result;
       
     } catch (error) {
-      const pipelineError = error instanceof TerraformGenerationError
-        ? new PipelineError('terraformGeneration', `Error de generación Terraform: ${error.message}`, { originalError: error })
+      const pipelineError = error instanceof JSONGenerationError
+        ? new PipelineError('jsonGeneration', `Error de generación JSON: ${error.message}`, { originalError: error })
         : error instanceof PipelineError
         ? error
-        : new PipelineError('terraformGeneration', `Error inesperado en generación Terraform: ${error.message}`, { originalError: error });
+        : new PipelineError('jsonGeneration', `Error inesperado en generación JSON: ${error.message}`, { originalError: error });
       
-      this._endStage('terraformGeneration', false, null, [pipelineError]);
+      this._endStage('jsonGeneration', false, null, [pipelineError]);
       throw pipelineError;
     }
   }
@@ -400,7 +400,7 @@ export class DrawIOTerraformPipeline {
   async _writeOutputFile(outputFilePath, configuration) {
     try {
       const { writeFile } = await import('node:fs/promises');
-      const jsonOutput = this.terraformGenerator.serializeToJSON(configuration, 2);
+      const jsonOutput = this.jsonGenerator.serializeToJSON(configuration, 2);
       await writeFile(outputFilePath, jsonOutput, 'utf8');
       
       this.log(`Archivo de salida escrito: ${outputFilePath}`);
@@ -490,8 +490,8 @@ export class DrawIOTerraformPipeline {
         case 'awsExtraction':
           return await this._recoverFromAWSError(error, inputFilePath, outputFilePath);
           
-        case 'terraformGeneration':
-          return await this._recoverFromTerraformError(error, inputFilePath, outputFilePath);
+        case 'jsonGeneration':
+          return await this._recoverFromJSONError(error, inputFilePath, outputFilePath);
           
         default:
           throw new PipelineError('recovery', `No hay estrategia de recuperación para etapa: ${error.stage}`);
@@ -531,17 +531,17 @@ export class DrawIOTerraformPipeline {
       services: []
     };
     
-    const terraformResult = await this._executeTerraformGeneration(minimalComponents);
+    const jsonResult = await this._executeJSONGeneration(minimalComponents);
     
     if (outputFilePath) {
-      await this._writeOutputFile(outputFilePath, terraformResult.configuration);
+      await this._writeOutputFile(outputFilePath, jsonResult.configuration);
     }
     
     return {
       success: true,
       recovered: true,
       recoveryMethod: 'minimal_configuration',
-      terraformResult,
+      jsonResult,
       outputFile: outputFilePath,
       stats: this._generateStats(),
       warnings: ['Se generó configuración mínima debido a errores en el archivo draw.io']
@@ -583,17 +583,17 @@ export class DrawIOTerraformPipeline {
         services: []
       };
       
-      const terraformResult = await this._executeTerraformGeneration(basicComponents);
+      const jsonResult = await this._executeJSONGeneration(basicComponents);
       
       if (outputFilePath) {
-        await this._writeOutputFile(outputFilePath, terraformResult.configuration);
+        await this._writeOutputFile(outputFilePath, jsonResult.configuration);
       }
       
       return {
         success: true,
         recovered: true,
         recoveryMethod: 'basic_components_with_project_info',
-        terraformResult,
+        jsonResult,
         outputFile: outputFilePath,
         stats: this._generateStats(),
         warnings: ['Se generó configuración básica debido a errores en extracción AWS']
@@ -604,37 +604,36 @@ export class DrawIOTerraformPipeline {
   }
 
   /**
-   * Recuperación de errores Terraform
+   * Recuperación de errores JSON
    * @private
    */
-  async _recoverFromTerraformError(error, inputFilePath, outputFilePath) {
+  async _recoverFromJSONError(error, inputFilePath, outputFilePath) {
     const awsResult = this.state.stages.awsExtraction.data;
     
     if (awsResult && awsResult.components) {
-      this.log('Intentando generación Terraform con recuperación de errores', 'warn');
+      this.log('Intentando generación JSON con recuperación de errores', 'warn');
       
-      const recovery = await this.terraformGenerator.attemptErrorRecovery(
+      const recovery = await this.jsonGenerator.attemptErrorRecovery(
         awsResult.components,
         { error: error.message, context: error.context }
       );
       
       if (recovery.success && outputFilePath) {
-        const jsonOutput = this.terraformGenerator.serializeToJSON(recovery.configuration, 2);
         await this._writeOutputFile(outputFilePath, recovery.configuration);
       }
       
       return {
         success: recovery.success,
         recovered: true,
-        recoveryMethod: 'terraform_error_recovery',
-        terraformResult: recovery,
+        recoveryMethod: 'json_error_recovery',
+        jsonResult: recovery,
         outputFile: outputFilePath,
         stats: this._generateStats(),
         warnings: recovery.warnings || []
       };
     }
     
-    throw new PipelineError('recovery', 'No se pueden recuperar datos AWS para recuperación Terraform');
+    throw new PipelineError('recovery', 'No se pueden recuperar datos AWS para recuperación JSON');
   }
 
   /**
@@ -656,10 +655,10 @@ export class DrawIOTerraformPipeline {
           duration: this.state.stages.awsExtraction.duration,
           componentsFound: this.state.stages.awsExtraction.data?.stats?.identifiedComponents || {}
         },
-        terraformGeneration: {
-          status: this.state.stages.terraformGeneration.status,
-          duration: this.state.stages.terraformGeneration.duration,
-          outputSize: this.state.stages.terraformGeneration.data?.size || 0
+        jsonGeneration: {
+          status: this.state.stages.jsonGeneration.status,
+          duration: this.state.stages.jsonGeneration.duration,
+          outputSize: this.state.stages.jsonGeneration.data?.size || 0
         }
       }
     };
@@ -686,7 +685,7 @@ export class DrawIOTerraformPipeline {
       stages: {
         xmlParsing: { status: 'pending', duration: 0, data: null, errors: [] },
         awsExtraction: { status: 'pending', duration: 0, data: null, errors: [] },
-        terraformGeneration: { status: 'pending', duration: 0, data: null, errors: [] }
+        jsonGeneration: { status: 'pending', duration: 0, data: null, errors: [] }
       },
       totalDuration: 0,
       success: false

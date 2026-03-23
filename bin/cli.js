@@ -2,10 +2,11 @@
 
 import { XMLParser, DrawIOParserError } from "../src/XMLParser.js";
 import { AWSComponentExtractor, AWSExtractionError } from "../src/AWSComponentExtractor.js";
-import { JSONGenerator, TerraformGenerationError } from "../src/JSONGenerator.js";
-import { writeFile } from "node:fs/promises";
+import { JSONGenerator, JSONGenerationError } from "../src/JSONGenerator.js";
+import { TFVarsGenerator, TFVarsGenerationError } from "../src/TFVarsGenerator.js";
+import { writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join, dirname } from "node:path";
 
 /**
  * Clase principal del CLI que coordina el pipeline completo
@@ -14,7 +15,8 @@ class DrawIOTerraformCLI {
   constructor() {
     this.xmlParser = new XMLParser();
     this.awsExtractor = new AWSComponentExtractor();
-    this.terraformGenerator = new JSONGenerator();
+    this.jsonGeneration = new JSONGenerator();
+    this.tfVarsGenerator = new TFVarsGenerator();
     this.verbose = false;
     this.startTime = null;
   }
@@ -27,23 +29,30 @@ class DrawIOTerraformCLI {
 drawio-terraform-parser - Extrae componentes AWS de diagramas draw.io y genera configuración Terraform
 
 USAGE:
-  drawio-terraform-parser --input <archivo.drawio> --output <config.json> [opciones]
+  drawio-terraform-parser --input <archivo.drawio> [opciones]
 
 ARGUMENTOS REQUERIDOS:
   --input, -i    Ruta al archivo draw.io (.drawio o .xml)
-  --output, -o   Ruta del archivo JSON de salida
 
 OPCIONES:
+  --output, -o   Ruta del archivo .tfvars de salida (por defecto: ./terraform.tfvars)
+
+OPCIONES:
+  --vars-template <path>  Ruta al archivo variables.tf (por defecto: ./variables.tf)
+  --output-json <path>   Escribir el JSON_Config intermedio al path especificado
   --verbose, -v  Mostrar información detallada del procesamiento
   --validate     Solo validar el archivo sin generar salida
   --help, -h     Mostrar esta ayuda
 
 EJEMPLOS:
-  # Procesar diagrama y generar configuración Terraform
-  drawio-terraform-parser -i architecture.drawio -o terraform-config.json
+  # Procesar diagrama y generar terraform.tfvars en el directorio actual
+  drawio-terraform-parser -i architecture.drawio
+
+  # Especificar ruta de salida personalizada
+  drawio-terraform-parser -i architecture.drawio -o output/terraform.tfvars
 
   # Procesar con información detallada
-  drawio-terraform-parser -i diagram.xml -o config.json --verbose
+  drawio-terraform-parser -i diagram.xml --verbose
 
   # Solo validar archivo sin generar salida
   drawio-terraform-parser -i diagram.drawio --validate
@@ -54,7 +63,7 @@ FORMATOS SOPORTADOS:
   - Archivos con contenido comprimido base64
 
 SALIDA:
-  El archivo JSON generado contiene la configuración Terraform con:
+  El archivo terraform.tfvars generado contiene las variables Terraform con:
   - Información de VPC (CIDR, región, nombre)
   - Configuración de subnets (públicas, privadas ruteables, privadas no ruteables)
   - Tablas de enrutamiento y asociaciones
@@ -71,6 +80,8 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
     const config = {
       inputFile: null,
       outputFile: null,
+      varsTemplate: join(process.cwd(), 'variables.tf'),
+      outputJson: null,
       verbose: false,
       validateOnly: false,
       showHelp: false
@@ -89,6 +100,16 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
         case '--output':
         case '-o':
           config.outputFile = args[i + 1];
+          i++; // Skip next argument
+          break;
+          
+        case '--vars-template':
+          config.varsTemplate = args[i + 1];
+          i++; // Skip next argument
+          break;
+          
+        case '--output-json':
+          config.outputJson = args[i + 1];
           i++; // Skip next argument
           break;
           
@@ -113,6 +134,11 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
       }
     }
 
+    // Default output to terraform.tfvars in CWD when not provided and not validate/output-json-only
+    if (!config.outputFile && !config.validateOnly && !config.outputJson) {
+      config.outputFile = join(process.cwd(), 'terraform.tfvars');
+    }
+
     return config;
   }
 
@@ -133,8 +159,8 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
     }
 
     // Validar archivo de salida (solo si no es validate-only)
-    if (!config.validateOnly && !config.outputFile) {
-      errors.push('Se requiere especificar archivo de salida con --output (o usar --validate)');
+    if (!config.validateOnly && !config.outputFile && !config.outputJson) {
+      errors.push('Se requiere especificar archivo de salida con --output (o usar --validate o --output-json)');
     }
 
     if (errors.length > 0) {
@@ -182,7 +208,7 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
   /**
    * Ejecuta el pipeline completo de procesamiento
    */
-  async processPipeline(inputFile, outputFile = null) {
+  async processPipeline(inputFile, outputFile = null, outputJson = null, varsTemplatePath = null) {
     this.startTime = Date.now();
     let stats = {
       inputFile: inputFile,
@@ -191,7 +217,7 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
       steps: {
         xmlParsing: { success: false, duration: 0, elementsFound: 0 },
         awsExtraction: { success: false, duration: 0, componentsFound: 0 },
-        terraformGeneration: { success: false, duration: 0, configSize: 0 }
+        jsonGeneration: { success: false, duration: 0, configSize: 0 }
       }
     };
 
@@ -272,27 +298,56 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
         }
       }
 
-      // Paso 3: Generación de configuración Terraform
-      if (outputFile) {
-        this.log('🔄 Generando configuración Terraform...');
-        const terraformStart = Date.now();
-        
-        const terraformConfig = this.terraformGenerator.generateConfiguration(processedComponents);
-        
+      // Paso 3: Generación de datos JSON
+      if (outputFile || outputJson) {
+        this.log('🔄 Generando datos JSON...');
+        const jsonStart = Date.now();
+
+        const jsonConfig = this.jsonGeneration.generateConfiguration(processedComponents);
+
         // Serializar a JSON
-        const jsonOutput = this.terraformGenerator.serializeToJSON(terraformConfig, 2);
-        
-        stats.steps.terraformGeneration = {
+        const jsonOutput = this.jsonGeneration.serializeToJSON(jsonConfig, 2);
+
+        stats.steps.jsonGeneration = {
           success: true,
-          duration: Date.now() - terraformStart,
+          duration: Date.now() - jsonStart,
           configSize: jsonOutput.length
         };
 
-        // Escribir archivo de salida
-        await writeFile(outputFile, jsonOutput, 'utf8');
-        
-        this.logSuccess(`Configuración Terraform generada: ${outputFile}`);
-        this.log(`📦 Tamaño del archivo: ${Math.round(jsonOutput.length / 1024)} KB`);
+        // Escribir JSON_Config al path --output-json si se especificó
+        if (outputJson) {
+          try {
+            await mkdir(dirname(outputJson), { recursive: true });
+            await writeFile(outputJson, JSON.stringify(jsonConfig, null, 2), 'utf8');
+            this.logSuccess(`JSON_Config escrito: ${outputJson}`);
+          } catch (writeErr) {
+            process.stderr.write(`❌ ERROR: No se pudo escribir el archivo --output-json: ${writeErr.message}\n`);
+            return { success: false, error: writeErr.message, stats };
+          }
+        }
+
+        // Generar .tfvars si se especificó --output
+        if (outputFile) {
+          try {
+            const generateResult = await this.tfVarsGenerator.generate(jsonConfig, varsTemplatePath);
+
+            // Forward warnings to stderr
+            for (const warning of generateResult.warnings) {
+              process.stderr.write(warning + '\n');
+            }
+
+            // Create parent directories and write output file
+            await mkdir(dirname(resolve(outputFile)), { recursive: true });
+            await writeFile(outputFile, generateResult.content, 'utf8');
+            this.logSuccess(`Configuración .tfvars generada: ${outputFile}`);
+          } catch (tfErr) {
+            if (tfErr instanceof TFVarsGenerationError) {
+              process.stderr.write(`❌ ERROR: ${tfErr.message}\n`);
+              return { success: false, error: tfErr.message, stats };
+            }
+            throw tfErr;
+          }
+        }
       }
 
       // Calcular tiempo total
@@ -318,20 +373,20 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
         }
       } else if (error instanceof AWSExtractionError) {
         this.logError('Error al extraer componentes AWS', error);
-      } else if (error instanceof TerraformGenerationError) {
+      } else if (error instanceof JSONGenerationError) {
         this.logError('Error al generar configuración Terraform', error);
         
         // Intentar recuperación de errores
         if (outputFile) {
           this.log('🔄 Intentando recuperación de errores...');
           try {
-            const recovery = await this.terraformGenerator.attemptErrorRecovery(
+            const recovery = await this.jsonGeneration.attemptErrorRecovery(
               stats.components || {}, 
               { error: error.message, context: error.context }
             );
             
             if (recovery.success) {
-              const recoveredJson = this.terraformGenerator.serializeToJSON(recovery.configuration, 2);
+              const recoveredJson = this.jsonGeneration.serializeToJSON(recovery.configuration, 2);
               await writeFile(outputFile, recoveredJson, 'utf8');
               
               this.logWarning(`Configuración recuperada generada: ${outputFile}`);
@@ -528,14 +583,14 @@ Para más información, visite: https://github.com/your-repo/drawio-terraform-pa
         const isValid = await this.validateFile(config.inputFile);
         return isValid ? 0 : 1;
       } else {
-        const result = await this.processPipeline(config.inputFile, config.outputFile);
+        const result = await this.processPipeline(config.inputFile, config.outputFile, config.outputJson, config.varsTemplate);
         
         if (this.verbose && result.stats) {
-          this.log('\n📈 Estadísticas de procesamiento:');
+          this.log('\n 📈 Estadísticas de procesamiento:');
           this.log(`   Tiempo total: ${result.stats.processingTime}ms`);
           this.log(`   XML parsing: ${result.stats.steps.xmlParsing.duration}ms`);
           this.log(`   AWS extraction: ${result.stats.steps.awsExtraction.duration}ms`);
-          this.log(`   Terraform generation: ${result.stats.steps.terraformGeneration.duration}ms`);
+          this.log(`   JSON generation: ${result.stats.steps.jsonGeneration.duration}ms`);
         }
         
         return result.success ? 0 : 1;

@@ -10,7 +10,7 @@ describe('JSONGenerator Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 7: Estructura JSON completa y válida**
+   * **Feature: drawio-json-parser, Property 7: Estructura JSON completa y válida**
    * **Validates: Requirements 4.1, 4.4**
    */
   test('Property 7: Estructura JSON completa y válida', () => {
@@ -306,7 +306,7 @@ describe('JSONGenerator Property Tests', () => {
 
     const configuration = generator.generateConfiguration(componentsWithNames);
 
-    // Los nombres deben ser limpiados para uso en Terraform
+    // Los nombres deben ser limpiados para uso en JSON
     expect(configuration.vpc_name).toMatch(/^[a-z0-9-]+$/);
     
     Object.keys(configuration.subnets).forEach(subnetName => {
@@ -319,7 +319,7 @@ describe('JSONGenerator Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 8: Organización correcta de subnets y routing**
+   * **Feature: drawio-json-parser, Property 8: Organización correcta de subnets y routing**
    * **Validates: Requirements 4.2, 4.3**
    */
   test('Property 8: Organización correcta de subnets y routing', () => {
@@ -584,12 +584,12 @@ describe('JSONGenerator Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 9: Round trip de serialización JSON**
+   * **Feature: drawio-json-parser, Property 9: Round trip de serialización JSON**
    * **Validates: Requirements 6.2, 6.4**
    */
   test('Property 9: Round trip de serialización JSON', () => {
-    // Generador de configuraciones Terraform válidas
-    const terraformConfigGenerator = fc.record({
+    // Generador de configuraciones JSON válidas
+    const jsonConfigGenerator = fc.record({
       vpcs: fc.array(
         fc.record({
           id: fc.integer({ min: 1, max: 999999 }).map(n => `vpc-${n}`),
@@ -651,8 +651,8 @@ describe('JSONGenerator Property Tests', () => {
     });
 
     fc.assert(
-      fc.property(terraformConfigGenerator, (awsComponents) => {
-        // Generar configuración Terraform
+      fc.property(jsonConfigGenerator, (awsComponents) => {
+        // Generar configuración JSON
         const originalConfiguration = generator.generateConfiguration(awsComponents);
 
         // Test 1: Serialización básica debe funcionar
@@ -841,7 +841,7 @@ describe('JSONGenerator Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 10: Manejo robusto de errores de parsing**
+   * **Feature: drawio-json-parser, Property 10: Manejo robusto de errores de parsing**
    * **Validates: Requirements 5.1, 5.4**
    */
   test('Property 10: Manejo robusto de errores de parsing', () => {
@@ -924,7 +924,7 @@ describe('JSONGenerator Property Tests', () => {
           expect(errorCaught).toBe(true);
           expect(errorInfo).toBeDefined();
           expect(errorInfo.message).toContain('Los componentes AWS deben ser un objeto válido');
-          expect(errorInfo.name).toBe('TerraformGenerationError');
+          expect(errorInfo.name).toBe('JSONGenerationError');
           expect(errorInfo.type).toBe('INVALID_INPUT');
         }
 
@@ -933,7 +933,7 @@ describe('JSONGenerator Property Tests', () => {
           if (errorCaught) {
             // Verificar que el error es específico y útil
             expect(errorInfo).toBeDefined();
-            expect(errorInfo.name).toBe('TerraformGenerationError');
+            expect(errorInfo.name).toBe('JSONGenerationError');
             expect(errorInfo.message).toBeTruthy();
             expect(typeof errorInfo.message).toBe('string');
             expect(errorInfo.message.length).toBeGreaterThan(0);
@@ -961,7 +961,7 @@ describe('JSONGenerator Property Tests', () => {
             expect(typeof serialized).toBe('string');
           } catch (serializationError) {
             // Si falla la serialización, debe ser un error específico
-            expect(serializationError.name).toBe('TerraformGenerationError');
+            expect(serializationError.name).toBe('JSONGenerationError');
             expect(serializationError.message).toBeTruthy();
           }
         }
@@ -1139,7 +1139,7 @@ describe('JSONGenerator Property Tests', () => {
 
       if (errorCaught) {
         expect(errorInfo).toBeDefined();
-        expect(errorInfo.name).toBe('TerraformGenerationError');
+        expect(errorInfo.name).toBe('JSONGenerationError');
         expect(errorInfo.message).toBeTruthy();
         expect(errorInfo.type).toBeTruthy();
         
@@ -1174,7 +1174,7 @@ describe('JSONGenerator Property Tests', () => {
 
     // Debe capturar el error de serialización
     expect(serializationError).toBeDefined();
-    expect(serializationError.name).toBe('TerraformGenerationError');
+    expect(serializationError.name).toBe('JSONGenerationError');
     expect(serializationError.type).toBe('INVALID_JSON_FORMAT');
     expect(serializationError.message).toContain('La configuración no puede ser serializada a JSON válido');
   });

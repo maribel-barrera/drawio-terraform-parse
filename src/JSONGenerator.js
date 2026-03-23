@@ -1,19 +1,19 @@
 // src/JSONGenerator.js
 
 /**
- * Error personalizado para errores de generación de configuración Terraform
+ * Error personalizado para errores de generación de configuración JSON
  */
-export class TerraformGenerationError extends Error {
+export class JSONGenerationError extends Error {
   constructor(type, message, context = {}) {
     super(message);
-    this.name = 'TerraformGenerationError';
+    this.name = 'JSONGenerationError';
     this.type = type;
     this.context = context;
   }
 }
 
 /**
- * Clase JSONGenerator para generar configuraciones JSON de Terraform
+ * Clase JSONGenerator para generar configuraciones JSON
  * basadas en componentes AWS extraídos de diagramas draw.io
  */
 export class JSONGenerator {
@@ -39,13 +39,13 @@ export class JSONGenerator {
   }
 
   /**
-   * Genera la configuración completa de Terraform en formato JSON
+   * Genera la configuración completa en formato JSON
    * @param {Object} awsComponents - Componentes AWS extraídos del diagrama
-   * @returns {Object} - Configuración JSON de Terraform
+   * @returns {Object} - Configuración JSON
    */
   generateConfiguration(awsComponents) {
     if (!awsComponents || typeof awsComponents !== 'object' || Array.isArray(awsComponents)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_INPUT',
         'Los componentes AWS deben ser un objeto válido',
         { receivedType: typeof awsComponents, isArray: Array.isArray(awsComponents) }
@@ -110,10 +110,10 @@ export class JSONGenerator {
 
       return configuration;
     } catch (error) {
-      if (error instanceof TerraformGenerationError) {
+      if (error instanceof JSONGenerationError) {
         throw error;
       }
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'GENERATION_FAILED',
         `Error al generar configuración: ${error.message}`,
         { originalError: error, awsComponents }
@@ -128,7 +128,7 @@ export class JSONGenerator {
    */
   createSubnetStructure(subnets) {
     if (!Array.isArray(subnets)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_SUBNETS',
         'Las subnets deben ser un array',
         { receivedType: typeof subnets }
@@ -159,12 +159,12 @@ export class JSONGenerator {
         structure.subnets[subnetName] = subnetConfig;
         
         // Actualizar contadores
-        const type = this._classifySubnetForTerraform(subnet);
+        const type = this._classifySubnetForJSON(subnet);
         if (structure.summary[type] !== undefined) {
           structure.summary[type]++;
         }
       } catch (error) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'SUBNET_PROCESSING_ERROR',
           `Error procesando subnet ${subnet.id || index}: ${error.message}`,
           { subnet, index, originalError: error }
@@ -245,7 +245,7 @@ export class JSONGenerator {
    */
   validateOutputStructure(configuration) {
     if (!configuration || typeof configuration !== 'object') {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_CONFIGURATION',
         'La configuración debe ser un objeto válido'
       );
@@ -267,7 +267,7 @@ export class JSONGenerator {
     }
 
     if (missingFields.length > 0) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'MISSING_REQUIRED_FIELDS',
         `Faltan campos requeridos en la configuración: ${missingFields.join(', ')}`,
         { missingFields, configuration }
@@ -297,7 +297,7 @@ export class JSONGenerator {
       
       // Verificar que el JSON no esté vacío
       if (!jsonString || jsonString.length === 0) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'EMPTY_JSON',
           'La configuración genera un JSON vacío'
         );
@@ -308,7 +308,7 @@ export class JSONGenerator {
       
       // Verificar que el objeto parseado es equivalente
       if (typeof parsed !== 'object' || parsed === null) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'INVALID_JSON_STRUCTURE',
           'El JSON parseado no mantiene la estructura de objeto'
         );
@@ -318,7 +318,7 @@ export class JSONGenerator {
       const criticalFields = ['project_name', 'vpc_name', 'subnets', 'route_tables'];
       for (const field of criticalFields) {
         if (!(field in parsed)) {
-          throw new TerraformGenerationError(
+          throw new JSONGenerationError(
             'JSON_ROUND_TRIP_FAILURE',
             `Campo crítico '${field}' se perdió durante la serialización JSON`,
             { field, originalConfig: configuration, parsedConfig: parsed }
@@ -327,10 +327,10 @@ export class JSONGenerator {
       }
 
     } catch (error) {
-      if (error instanceof TerraformGenerationError) {
+      if (error instanceof JSONGenerationError) {
         throw error;
       }
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_JSON_FORMAT',
         `La configuración no puede ser serializada a JSON válido: ${error.message}`,
         { originalError: error }
@@ -370,7 +370,7 @@ export class JSONGenerator {
     for (const field of cidrFields) {
       const cidr = configuration[field];
       if (!this._validateAndFixCIDR(cidr)) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'INVALID_CIDR_FORMAT',
           `Campo '${field}' no tiene formato CIDR válido: ${cidr}`,
           { field, value: cidr }
@@ -390,7 +390,7 @@ export class JSONGenerator {
     const validRegionPattern = /^(us|eu|ap|sa|ca|af|me)-(gov-)?(north|south|east|west|central|northeast|southeast|southwest|northwest|central)-\d$/;
     
     if (!validRegionPattern.test(region)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_AWS_REGION',
         `Región AWS no válida: ${region}`,
         { region, expectedPattern: validRegionPattern.toString() }
@@ -404,7 +404,7 @@ export class JSONGenerator {
    */
   _validateSubnetsStructure(subnets) {
     if (typeof subnets !== 'object' || Array.isArray(subnets)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_SUBNETS_STRUCTURE',
         'Las subnets deben ser un objeto, no un array'
       );
@@ -420,12 +420,12 @@ export class JSONGenerator {
    * @private
    */
   _validateSingleSubnet(name, config) {
-    // Campos requeridos para la nueva estructura simplificada de Terraform
+    // Campos requeridos para la nueva estructura simplificada de JSON
     const requiredSubnetFields = ['cidr', 'az', 'tags'];
     
     for (const field of requiredSubnetFields) {
       if (!(field in config)) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'MISSING_SUBNET_FIELD',
           `Subnet '${name}' falta campo requerido: ${field}`,
           { subnetName: name, missingField: field, config }
@@ -435,7 +435,7 @@ export class JSONGenerator {
 
     // Validar CIDR de subnet
     if (!this._validateAndFixCIDR(config.cidr)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_SUBNET_CIDR',
         `Subnet '${name}' tiene CIDR inválido: ${config.cidr}`,
         { subnetName: name, cidr: config.cidr }
@@ -444,7 +444,7 @@ export class JSONGenerator {
 
     // Validar que az (availability zone) sea una string válida
     if (!config.az || typeof config.az !== 'string') {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_AVAILABILITY_ZONE',
         `Subnet '${name}' tiene zona de disponibilidad inválida: ${config.az}`,
         { subnetName: name, az: config.az }
@@ -453,7 +453,7 @@ export class JSONGenerator {
 
     // Validar que tags sea un objeto
     if (!config.tags || typeof config.tags !== 'object' || Array.isArray(config.tags)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_SUBNET_TAGS',
         `Subnet '${name}' debe tener tags como objeto`,
         { subnetName: name, tags: config.tags }
@@ -467,7 +467,7 @@ export class JSONGenerator {
    */
   _validateRouteTablesStructure(routeTables) {
     if (typeof routeTables !== 'object' || Array.isArray(routeTables)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_ROUTE_TABLES_STRUCTURE',
         'Las route tables deben ser un objeto, no un array'
       );
@@ -487,7 +487,7 @@ export class JSONGenerator {
     
     for (const field of requiredRTFields) {
       if (!(field in config)) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'MISSING_ROUTE_TABLE_FIELD',
           `Route table '${name}' falta campo requerido: ${field}`,
           { routeTableName: name, missingField: field, config }
@@ -497,7 +497,7 @@ export class JSONGenerator {
 
     // Validar que routes es un array
     if (!Array.isArray(config.routes)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_ROUTES_TYPE',
         `Route table '${name}' debe tener routes como array`,
         { routeTableName: name, routesType: typeof config.routes }
@@ -506,7 +506,7 @@ export class JSONGenerator {
 
     // Validar que associated_subnets es un array
     if (!Array.isArray(config.associated_subnets)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_ASSOCIATED_SUBNETS_TYPE',
         `Route table '${name}' debe tener associated_subnets como array`,
         { routeTableName: name, associatedSubnetsType: typeof config.associated_subnets }
@@ -528,7 +528,7 @@ export class JSONGenerator {
     
     for (const field of requiredRouteFields) {
       if (!(field in route)) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'MISSING_ROUTE_FIELD',
           `Ruta ${index} en route table '${routeTableName}' falta campo: ${field}`,
           { routeTableName, routeIndex: index, missingField: field, route }
@@ -538,7 +538,7 @@ export class JSONGenerator {
 
     // Validar formato de destination (debe ser CIDR o 0.0.0.0/0)
     if (route.destination !== '0.0.0.0/0' && !this._validateAndFixCIDR(route.destination)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_ROUTE_DESTINATION',
         `Ruta ${index} en route table '${routeTableName}' tiene destination inválido: ${route.destination}`,
         { routeTableName, routeIndex: index, destination: route.destination }
@@ -552,7 +552,7 @@ export class JSONGenerator {
    */
   _validateMainRouteTableReference(configuration) {
     if (configuration.main_rt && !configuration.route_tables[configuration.main_rt]) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_MAIN_RT_REFERENCE',
         `La main route table '${configuration.main_rt}' no existe en route_tables`,
         { mainRT: configuration.main_rt, availableRTs: Object.keys(configuration.route_tables) }
@@ -568,7 +568,7 @@ export class JSONGenerator {
    */
   serializeToJSON(configuration, indent = 2) {
     if (!configuration || typeof configuration !== 'object') {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_SERIALIZATION_INPUT',
         'La configuración debe ser un objeto válido para serialización'
       );
@@ -665,14 +665,14 @@ export class JSONGenerator {
         serializationAttempts
       });
 
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'SERIALIZATION_FAILED',
         `Falló la serialización después de ${serializationAttempts.length} intentos: ${lastError.message}`,
         errorInfo
       );
 
     } catch (error) {
-      if (error instanceof TerraformGenerationError) {
+      if (error instanceof JSONGenerationError) {
         throw error;
       }
       
@@ -681,7 +681,7 @@ export class JSONGenerator {
         serializationAttempts
       });
 
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'SERIALIZATION_ERROR',
         `Error durante la serialización: ${error.message}`,
         errorInfo
@@ -696,7 +696,7 @@ export class JSONGenerator {
    */
   prettyPrintJSON(jsonString) {
     if (!jsonString || typeof jsonString !== 'string') {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_PRETTY_PRINT_INPUT',
         'El input debe ser un string JSON válido'
       );
@@ -720,7 +720,7 @@ export class JSONGenerator {
         isValid: true
       };
     } catch (error) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'PRETTY_PRINT_ERROR',
         `Error al formatear JSON: ${error.message}`,
         { originalError: error, input: jsonString.substring(0, 200) }
@@ -735,7 +735,7 @@ export class JSONGenerator {
    */
   validateRoundTrip(originalConfiguration) {
     if (!originalConfiguration || typeof originalConfiguration !== 'object') {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_ROUND_TRIP_INPUT',
         'La configuración original debe ser un objeto válido'
       );
@@ -766,10 +766,10 @@ export class JSONGenerator {
         differences: isIdentical ? [] : this._findDifferences(serialized, reSerialized)
       };
     } catch (error) {
-      if (error instanceof TerraformGenerationError) {
+      if (error instanceof JSONGenerationError) {
         throw error;
       }
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'ROUND_TRIP_VALIDATION_ERROR',
         `Error durante validación round trip: ${error.message}`,
         { originalError: error, originalConfiguration }
@@ -1116,7 +1116,7 @@ export class JSONGenerator {
 
     // Patrones para ignorar elementos que no son servicios reales
     const ignorePatterns = [
-      /alias.?account/i,
+      /alias.?account|apigee/i,
       /virginia|oregon|ireland|tokyo|sydney|frankfurt|sao.?paulo/i,
       /us-east|us-west|eu-west|ap-southeast|ap-northeast/i,
       /https?|tls|ssl/i,
@@ -1180,7 +1180,7 @@ export class JSONGenerator {
     if (vpcs.length === 0) {
       return {
         vpc_name: `vpc-${projectName}-${environment}`,
-        vpc_cidr: '10.0.0.0/16',
+        vpc_cidr: '10.0.0.0/24',
         non_route_cidr: '100.64.0.0/16'
       };
     }
@@ -1201,7 +1201,7 @@ export class JSONGenerator {
    * @private
    */
   _createSubnetConfig(subnet, index) {
-    const type = this._classifySubnetForTerraform(subnet);
+    const type = this._classifySubnetForJSON(subnet);
     
     // Distribuir subnets entre zonas de disponibilidad disponibles según requerimientos
     const availabilityZones = [`${this.defaultConfig.region}a`, `${this.defaultConfig.region}b`];
@@ -1219,7 +1219,7 @@ export class JSONGenerator {
       return null;
     }
     
-    // Estructura simplificada según la definición de Terraform
+    // Estructura simplificada según la definición de JSON
     return {
       cidr: cidr,
       az: az,  // Cambiar de 'availability_zone' a 'az'
@@ -1232,10 +1232,10 @@ export class JSONGenerator {
   }
 
   /**
-   * Clasifica subnet para configuración Terraform
+   * Clasifica subnet para configuración JSON
    * @private
    */
-  _classifySubnetForTerraform(subnet) {
+  _classifySubnetForJSON(subnet) {
     const text = (subnet.label || subnet.value || '').toLowerCase();
     const subnetType = subnet.type || '';
 
@@ -1265,7 +1265,7 @@ export class JSONGenerator {
    * @private
    */
   _generateSubnetName(subnet, index) {
-    const type = this._classifySubnetForTerraform(subnet);
+    const type = this._classifySubnetForJSON(subnet);
     const env = this.defaultConfig.environment || 'dev';
 
     const typeLabel = {
@@ -1415,7 +1415,7 @@ export class JSONGenerator {
       const actualType = typeof value;
       
       if (actualType !== expectedType) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'INVALID_FIELD_TYPE',
           `Campo '${field}' debe ser de tipo '${expectedType}', pero es '${actualType}'`,
           { field, expectedType, actualType, value }
@@ -1426,7 +1426,7 @@ export class JSONGenerator {
     // Validaciones específicas adicionales
     if (configuration.subnets && typeof configuration.subnets === 'object') {
       if (Array.isArray(configuration.subnets)) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'INVALID_SUBNETS_TYPE',
           'El campo subnets debe ser un objeto, no un array'
         );
@@ -1435,7 +1435,7 @@ export class JSONGenerator {
 
     if (configuration.route_tables && typeof configuration.route_tables === 'object') {
       if (Array.isArray(configuration.route_tables)) {
-        throw new TerraformGenerationError(
+        throw new JSONGenerationError(
           'INVALID_ROUTE_TABLES_TYPE',
           'El campo route_tables debe ser un objeto, no un array'
         );
@@ -1444,7 +1444,7 @@ export class JSONGenerator {
 
     // Validar que cidr_blocks sea un array
     if (configuration.cidr_blocks && !Array.isArray(configuration.cidr_blocks)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_CIDR_BLOCKS_TYPE',
         'El campo cidr_blocks debe ser un array'
       );
@@ -1452,7 +1452,7 @@ export class JSONGenerator {
 
     // Validar que availability_zones sea un array
     if (configuration.availability_zones && !Array.isArray(configuration.availability_zones)) {
-      throw new TerraformGenerationError(
+      throw new JSONGenerationError(
         'INVALID_AVAILABILITY_ZONES_TYPE',
         'El campo availability_zones debe ser un array'
       );
@@ -1460,7 +1460,7 @@ export class JSONGenerator {
   }
 
   /**
-   * Limpia nombres para uso en Terraform
+   * Limpia nombres para uso en JSON
    * @private
    */
   _cleanName(name) {
@@ -1576,7 +1576,7 @@ export class JSONGenerator {
     }
 
     // Generar opciones de recuperación basadas en el tipo de error
-    if (error instanceof TerraformGenerationError) {
+    if (error instanceof JSONGenerationError) {
       errorInfo.recoveryOptions = this._generateRecoveryOptions(error);
     } else {
       errorInfo.recoveryOptions = [
@@ -1819,7 +1819,7 @@ export class JSONGenerator {
       subnet_count: 0,
       route_table_count: 0,
       has_main_rt: false,
-      type: 'terraform_configuration',
+      type: 'json_configuration',
       isValid: typeof configuration === 'object' && configuration !== null
     };
   }

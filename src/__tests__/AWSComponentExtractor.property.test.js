@@ -10,7 +10,7 @@ describe('AWSComponentExtractor Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 4: Identificación consistente de componentes AWS**
+   * **Feature: drawio-json-parser, Property 4: Identificación consistente de componentes AWS**
    * **Validates: Requirements 2.1, 2.2, 2.4**
    */
   test('Property 4: Identificación consistente de componentes AWS', () => {
@@ -216,7 +216,7 @@ describe('AWSComponentExtractor Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 5: Extracción completa de propiedades**
+   * **Feature: drawio-json-parser, Property 5: Extracción completa de propiedades**
    * **Validates: Requirements 2.3, 3.1, 3.2, 3.3, 3.4**
    */
   test('Property 5: Extracción completa de propiedades', () => {
@@ -428,7 +428,7 @@ describe('AWSComponentExtractor Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 6: Preservación de integridad de datos**
+   * **Feature: drawio-json-parser, Property 6: Preservación de integridad de datos**
    * **Validates: Requirements 6.3**
    */
   test('Property 6: Preservación de integridad de datos', () => {
@@ -608,7 +608,7 @@ describe('AWSComponentExtractor Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 11: Detección de diagramas sin componentes AWS**
+   * **Feature: drawio-json-parser, Property 11: Detección de diagramas sin componentes AWS**
    * **Validates: Requirements 5.2**
    */
   test('Property 11: Detección de diagramas sin componentes AWS', () => {
@@ -696,7 +696,7 @@ describe('AWSComponentExtractor Property Tests', () => {
   });
 
   /**
-   * **Feature: drawio-terraform-parser, Property 12: Validación de completitud de componentes**
+   * **Feature: drawio-json-parser, Property 12: Validación de completitud de componentes**
    * **Validates: Requirements 5.3**
    */
   test('Property 12: Validación de completitud de componentes', () => {

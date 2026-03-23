@@ -3,7 +3,7 @@
 Herramienta CLI para leer archivos de diagrama **draw.io** (`.drawio` o `.xml`), extraer los componentes de infraestructura AWS definidos en el diagrama y generar un archivo JSON listo para usarse como variables de Terraform (`.tfvars`).
 
 ---
-
+ßß
 ## ¿Qué hace?
 
 1. **Parsea** el archivo draw.io o su XML exportado, incluyendo soporte para contenido comprimido en base64.
@@ -50,19 +50,13 @@ drawio-terraform-parser --input <archivo.drawio> --output <config.json> [opcione
 ### Ejemplos
 
 ```bash
-# Procesar diagrama y generar configuración Terraform
-drawio-terraform-parser -i architecture.drawio -o terraform-config.json
+# Especificar archivo de salida
+node bin/cli.js --input arqui-test.drawio --output terraform.tfvars
 
-# Procesar con salida detallada
-drawio-terraform-parser -i diagram.xml -o config.json --verbose
-
-# Solo validar el archivo sin generar salida
-drawio-terraform-parser -i diagram.drawio --validate
-
-# Con el archivo .drawio
+# Con el archivo .drawio JSON intermedio)
 node bin/cli.js -i "diagram.drawio" -o output.json
 
-# Con el archivo .xml
+# Con el archivo .xml (JSON intermedio)
 node bin/cli.js -i "diagram.drawio.xml" -o output.json
 
 # Con verbose para ver el detalle del procesamiento
@@ -70,6 +64,13 @@ node bin/cli.js -i "diagram.drawio" -o output.json --verbose
 
 # Solo validar sin generar salida
 node bin/cli.js -i "diagram.drawio" --validate
+
+# Con template de variables personalizado
+node bin/cli.js --input arqui-test.drawio --vars-template ./variables.tf
+
+# Ver ayuda
+node bin/cli.js --help
+
 ```
 
 ---

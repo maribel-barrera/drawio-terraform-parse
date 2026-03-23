@@ -1,6 +1,6 @@
 /**
- * Property-based tests for DrawIO Terraform Parser
- * Feature: drawio-terraform-parser
+ * Property-based tests for DrawIO JSON Parser
+ * Feature: drawio-json-parser
  */
 
 import fc from 'fast-check';
@@ -10,7 +10,7 @@ import { AWSComponentExtractor } from '../AWSComponentExtractor.js';
 describe('DrawIO Parser Property Tests', () => {
   
   /**
-   * Feature: drawio-terraform-parser, Property 1: Archivos draw.io válidos son siempre parseables
+   * Feature: drawio-json-parser, Property 1: Archivos draw.io válidos son siempre parseables
    * Validates: Requirements 1.1, 1.2
    */
   test('Property 1: Valid draw.io files are always parseable', async () => {
@@ -44,7 +44,7 @@ describe('DrawIO Parser Property Tests', () => {
   });
 
   /**
-   * Feature: drawio-terraform-parser, Property 2: Archivos XML inválidos son siempre rechazados
+   * Feature: drawio-json-parser, Property 2: Archivos XML inválidos son siempre rechazados
    * Validates: Requirements 1.3, 1.4
    */
   test('Property 2: Invalid XML files are always rejected', async () => {
@@ -74,7 +74,7 @@ describe('DrawIO Parser Property Tests', () => {
   });
 
   /**
-   * Feature: drawio-terraform-parser, Property 3: Validación de esquema draw.io
+   * Feature: drawio-json-parser, Property 3: Validación de esquema draw.io
    * Validates: Requirements 6.1
    */
   test('Property 3: Draw.io schema validation', async () => {

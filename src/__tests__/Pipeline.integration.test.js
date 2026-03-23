@@ -1,9 +1,9 @@
 /**
- * Integration tests for DrawIO Terraform Pipeline
- * Tests end-to-end flow from draw.io XML to Terraform JSON
+ * Integration tests for DrawIO JSON Pipeline
+ * Tests end-to-end flow from draw.io XML to JSON
  */
 
-import { DrawIOTerraformPipeline, PipelineError } from '../Pipeline.js';
+import { DrawIOJSONPipeline, PipelineError } from '../Pipeline.js';
 import { writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -12,7 +12,7 @@ describe('Pipeline Integration Tests', () => {
   let tempFiles = [];
 
   beforeEach(() => {
-    pipeline = new DrawIOTerraformPipeline({
+    pipeline = new DrawIOJSONPipeline({
       enableLogging: false,
       enableRecovery: true,
       validateIntermediateSteps: true
@@ -66,7 +66,7 @@ describe('Pipeline Integration Tests', () => {
       expect(result.success).toBe(true);
       expect(result.xmlResult).toBeDefined();
       expect(result.awsResult).toBeDefined();
-      expect(result.terraformResult).toBeDefined();
+      expect(result.jsonResult).toBeDefined();
       expect(result.outputFile).toBe(outputFile);
       
       // Verify XML parsing results
@@ -79,12 +79,12 @@ describe('Pipeline Integration Tests', () => {
       expect(result.awsResult.stats.identifiedComponents.vpcs).toBeGreaterThan(0);
       expect(result.awsResult.stats.identifiedComponents.subnets).toBeGreaterThan(0);
       
-      // Verify Terraform generation results
-      expect(result.terraformResult.configuration).toBeDefined();
-      expect(result.terraformResult.jsonOutput).toBeDefined();
-      expect(result.terraformResult.configuration.vpc_name).toBeTruthy();
-      expect(result.terraformResult.configuration.subnets).toBeDefined();
-      expect(Object.keys(result.terraformResult.configuration.subnets).length).toBeGreaterThan(0);
+      // Verify JSON generation results
+      expect(result.jsonResult.configuration).toBeDefined();
+      expect(result.jsonResult.jsonOutput).toBeDefined();
+      expect(result.jsonResult.configuration.vpc_name).toBeTruthy();
+      expect(result.jsonResult.configuration.subnets).toBeDefined();
+      expect(Object.keys(result.jsonResult.configuration.subnets).length).toBeGreaterThan(0);
       
       // Verify pipeline statistics
       expect(result.stats).toBeDefined();
@@ -92,7 +92,7 @@ describe('Pipeline Integration Tests', () => {
       expect(result.stats.success).toBe(true);
       expect(result.stats.stages.xmlParsing.status).toBe('completed');
       expect(result.stats.stages.awsExtraction.status).toBe('completed');
-      expect(result.stats.stages.terraformGeneration.status).toBe('completed');
+      expect(result.stats.stages.jsonGeneration.status).toBe('completed');
     });
 
     test('should handle draw.io file without AWS components gracefully', async () => {
@@ -118,11 +118,11 @@ describe('Pipeline Integration Tests', () => {
       // Should still succeed but generate default configuration
       expect(result.success).toBe(true);
       expect(result.awsResult.components._warnings).toBeDefined();
-      expect(result.terraformResult.configuration).toBeDefined();
+      expect(result.jsonResult.configuration).toBeDefined();
       
-      // Should generate default Terraform configuration
-      expect(result.terraformResult.configuration.vpc_name).toBeTruthy();
-      expect(result.terraformResult.configuration.region).toBe('us-east-1');
+      // Should generate default JSON configuration
+      expect(result.jsonResult.configuration.vpc_name).toBeTruthy();
+      expect(result.jsonResult.configuration.region).toBe('us-east-1');
     });
 
     test('should process actual project draw.io file if it exists', async () => {
@@ -136,7 +136,7 @@ describe('Pipeline Integration Tests', () => {
         
         // If successful, verify the results
         expect(result.success).toBe(true);
-        expect(result.terraformResult.configuration).toBeDefined();
+        expect(result.jsonResult.configuration).toBeDefined();
         expect(result.stats.totalDuration).toBeGreaterThan(0);
         
         // Verify that we extracted some meaningful data
@@ -189,7 +189,7 @@ describe('Pipeline Integration Tests', () => {
 
     test('should handle pipeline with recovery disabled', async () => {
       // Create pipeline with recovery disabled
-      const pipelineNoRecovery = new DrawIOTerraformPipeline({
+      const pipelineNoRecovery = new DrawIOJSONPipeline({
         enableRecovery: false,
         enableLogging: false
       });
@@ -230,7 +230,7 @@ describe('Pipeline Integration Tests', () => {
       expect(finalState.totalDuration).toBeGreaterThanOrEqual(0);
       expect(finalState.stages.xmlParsing.status).toBe('completed');
       expect(finalState.stages.awsExtraction.status).toBe('completed');
-      expect(finalState.stages.terraformGeneration.status).toBe('completed');
+      expect(finalState.stages.jsonGeneration.status).toBe('completed');
       
       // Verify statistics
       expect(finalState.stats).toBeDefined();
@@ -267,7 +267,7 @@ describe('Pipeline Integration Tests', () => {
       expect(state.currentStage).toBeNull();
       expect(state.stages.xmlParsing.status).toBe('pending');
       expect(state.stages.awsExtraction.status).toBe('pending');
-      expect(state.stages.terraformGeneration.status).toBe('pending');
+      expect(state.stages.jsonGeneration.status).toBe('pending');
     });
   });
 
@@ -275,7 +275,7 @@ describe('Pipeline Integration Tests', () => {
     test('should report progress correctly when callback is provided', async () => {
       const progressReports = [];
       
-      const pipelineWithProgress = new DrawIOTerraformPipeline({
+      const pipelineWithProgress = new DrawIOJSONPipeline({
         enableLogging: false,
         progressCallback: (progress) => {
           progressReports.push(progress);
@@ -316,13 +316,13 @@ describe('Pipeline Integration Tests', () => {
       const stages = new Set(progressReports.map(r => r.stage));
       expect(stages.has('xmlParsing')).toBe(true);
       expect(stages.has('awsExtraction')).toBe(true);
-      expect(stages.has('terraformGeneration')).toBe(true);
+      expect(stages.has('jsonGeneration')).toBe(true);
     });
   });
 
   describe('Configuration validation', () => {
     test('should validate intermediate steps when enabled', async () => {
-      const pipelineWithValidation = new DrawIOTerraformPipeline({
+      const pipelineWithValidation = new DrawIOJSONPipeline({
         enableLogging: false,
         validateIntermediateSteps: true
       });
@@ -345,14 +345,14 @@ describe('Pipeline Integration Tests', () => {
       
       // Should complete successfully with validation
       expect(result.success).toBe(true);
-      expect(result.terraformResult.configuration).toBeDefined();
+      expect(result.jsonResult.configuration).toBeDefined();
       
       // Verify that validation was performed (no specific assertions needed,
       // just that it didn't throw errors)
     });
 
     test('should skip validation when disabled', async () => {
-      const pipelineNoValidation = new DrawIOTerraformPipeline({
+      const pipelineNoValidation = new DrawIOJSONPipeline({
         enableLogging: false,
         validateIntermediateSteps: false
       });
